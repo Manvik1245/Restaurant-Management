@@ -2,13 +2,42 @@ from datetime import datetime # the datetime module is going to be imported to g
 import csv # Csv is imported to write all the information into a csv file 
 import os # the purpose of this module is so that files can b read and written in all operating systems where there are different paths 
 import pandas as pd# Purpose of this module is to filter and read the specific  data in the files and also  handling broken lines 
-from matplotlib import pyplot as plot # The purpose of this module is to plot the pie chart 
-class Server: # This is the server class which is going to be accessed by the server who is placing the orders , adding items etc, there are various attributes initialized like the name values,menu etc
+from matplotlib import pyplot as plot # The purpose of this module is to plot the pie chart
+import getpass 
+import sqlite3
+def menu_setup():
+    key= sqlite3.connect('resturant_menu.db')
+    cursor= key.cursor()
+        
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS menu_inventory(
+            name TEXT PRIMARY KEY,
+            price REAL,
+            category TEXT,
+            quantity_ordered INTEGER DEFAULT 0
+         )
+     ''')
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Mac and Cheese', 30.00, 'Main', 0)")
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Cheeseburger', 50.00, 'Main', 0)")
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Ceaser Salad', 20.00, 'Main', 0)")
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Pizza', 30.00, 'Main', 0)")
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Ziti', 25.00, 'Main', 0)")
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Duck', 50.00, 'Main', 0)")
+    cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Steak', 75.00, 'Main', 0)")
+    key.commit()
+    key.close()
+    
+class Server: # This is the server class which is going to be accessed by the server who is placing the orders , adding items etc, there are various attributes initialized like the name values,menu etc 
     def __init__(self,name):
-        # We are initializng a constructor with the server needing to put their name so that the order history can be saved at different files which changes according to the name of the server. We are also initialzing an attribute called self.menu which is storing a dictionary with name of food item being the key and the price being the value in each dictionary. There is also an empty list initiated called self.order_history to store the name of food items ordered by each consumer.  
+        # We are initializng a constructor with the server needing to put their name so that the order history can be saved at different files which changes according to the name of the server. We are also initialzing an attribute called self.menu which is storing a dictionary with name of food item being the key and the price being the value in each dictionary. There is also an empty list initiated called self.order_history to store the name of food items ordered by each consumer. 
+        menu_setup() 
         self.name= name
         print("Welcome "+ name )
-        self.menu= [{"Mac And Cheese":20.00},{"Cheeseburger": 15.00}, {"Ceaser Salad":18.00}, {"Pizza": 30.00}, {"Ziti": 25.00}, {"Duck": 50.00}, {"Salmon": 60.00}, {"Steak": 75.00}]
+        conn=sqlite3.connect("resturant_menu.db")
+        cursor= conn.cursor()
+        cursor.execute("SELECT name, price FROM menu_inventory")
+        self.menu= [{row[0]:row[1]} for row in cursor.fetchall()]
+        conn.close()
         self.name_values=[]  # There is this list initiated in order to ensure that the add_item method works so we can easily add new items by comparing food items in lower case and check this list. 
         self.purchase_history=[] # This list is responsible to save the food items that are being purchased when ordered by one table 
         for item in self.menu: # The menu is being iteratred over to save it in the name values list in lowercase to compare when purchasing and adding new items to the menu
@@ -76,12 +105,18 @@ class Server: # This is the server class which is going to be accessed by the se
                 
                         
     def order_items(self): # This method is going to be allowing the server to place an order for each table. 
+        menu_setup()
         while True: # This is so that the code will be running continously for the sever to continously add orders to the system.
             choice= input("If you want to add another purchase type in O or press Q when you are done: ") # There is a choice for the server to add more items or quit the function after the order has been placed.
             if choice== "O" or choice== "o":
                 purchase= input("What does your customer want to eat? ") # There is an input asked to add the food item that the customer wants to eat 
                 if purchase.lower() in self.name_values:# The code is again going to be checking the updated food items name list to verify if the food item in lowercase  asked by the customer actually is in the menu.
                     self.purchase_history.append(purchase) # If the item does exist in the menu then the food item is going to be added to the list.
+                    conn = sqlite3.connect('resturant_menu.db')
+                    cursor = conn.cursor() 
+                    cursor.execute("UPDATE menu_inventory SET quantity_ordered=  quantity_ordered+1 WHERE name =?", (purchase,))
+                    conn.commit()
+                    conn.close()
                 else: # This statement is going to be called when the food item is not going to be in the food items list meaning the item is not in the menu so invalid item is displayed. 
                     print("Item does not exist in the menu, Please have a look at the menu and try again")
                     self.show_menu() # The menu is going to be showed to check what items are actually in the menu by calling the function
@@ -249,7 +284,7 @@ class Manager: #This is another class called which is going to be accessed by th
     def authenticate(self): # The purpose of this method is to be checking if the person who is going to be acessing manager class is actually the manager by them putting in a password which is compared to the password set for the class 
         count =0 
         while count< 3: # There are going to be three attemps for the person to be put in the right password
-            password= input("Please enter your password to authenticate:- ")
+            password= getpass.getpass("Please enter your password to authenticate:- ")
             if password== "P@$$w0rd2o25":
                 print("Welcome! " + self.name) # if the right password is put in then it wll display a message saying welcome
                 return(True)
@@ -378,6 +413,15 @@ class Manager: #This is another class called which is going to be accessed by th
             print("There seems to be an unknown error, Please try again!")
             return(False)
     # The debugger was also used in this function to identify what is happening with split_items and what was happning with count each time in order to ensure that the right quantitiy of the pie chart was plotted for each value 
+    def show_bestselling_items(self):
+        conn= sqlite3.connect("resturant_menu.db")
+        cursor= conn.cursor()
+        cursor.execute("SELECT name, quantity_ordered FROM menu_inventory ORDER BY quantity_ordered DESC")
+        data_items= cursor.fetchall()
+        for i in data_items:
+            print( i[0] + " - Sold: "+  str(i[1]))
+        conn.close()
+        
 print("Welcome to the Resturant Management System")
 while True:
     print("Please select an option from below")
@@ -423,7 +467,7 @@ while True:
             authentication= s.authenticate() # After a new manager object is created, the person who is going to be the manager has to authenticate their details 
             if authentication== True: # If the authentication is going to be passed the manager will have some options to choose from 
                 while True:# The loop is going to be running infinitely until the manager wants to exit the program when they are done. 
-                    print("Options:-\n Calculate bonus for each person: B \n Show all the bonuses that are to be given this month : S \n Display the items ordered by each server in a pie chart :P \n Exit the program :E")
+                    print("Options:-\n Calculate bonus for each person: B \n Show all the bonuses that are to be given this month : S \n Display the items ordered by each server in a pie chart :P \n Which item is sold the most :W \n Exit the program :E ")
                     options_manager= input("Please enter the letter of the option you want: ") # According to the options given to the manager, they can choose anyone 
                     if options_manager== "B" or options_manager== "b": # If the option chosen by the manager is to calculate the bonus for a server, the calculate_bonus method in the manager function is called 
                         name= input("Please enter the name of the person whose bonus you want to calculate:  ")
@@ -434,6 +478,8 @@ while True:
                     elif options_manager=="P" or options_manager=="p": # If this option is chosen,then the name of the server is going to be asked to input and then a pie chart of their order history is going to be displayed 
                         name1= input("Enter the name of the server whoose order history pie chart you want to see: ")
                         s.display_chart(name1)
+                    elif options_manager== "W" or options_manager=="w":
+                        s.show_bestselling_items()
                     elif options_manager =="E" or options_manager =="e":
                         print("Exiting!")
                         break
@@ -445,268 +491,7 @@ while True:
         print("Quitting the program ")
         break
     else: # This condition is going to be holding True if eiter A or Q is not selected asking the user to prompt again 
-        print("No option is selected, please select a right option ")
-print()       
-#Testing code 
-# print("Case A: Checking if the server and manager classes are working  and seeing if it shows in the menu when a new item is added")
-test_bot= Server("Test")
-test_bot.menu=[{"Duck":50}, {"Salad": 20}, {"Pizza":30}]
-test_bot.name_values=["duck","salad","pizza"]
-print("Initial Menu: ")
-print()
-test_bot.show_menu()
-print("The food items that have to be in the menu are :-  Duck, Salad and Pizza")
-test_bot.menu.append({"Pasta":20})
-test_bot.name_values.append("pasta") # There is going to be a new food item added to the menu and to the name values list so that we can compare and check for other functions like order_item which needs to check this list and according to that update the menu or not.
-print("Updated Menu: ")
-print()
-test_bot.show_menu() # It is expected to see 4 food items with their price when the menu is printed. 
-print()
-print("The food items that have to be in the menu are :-  Duck, Salad,Pizza and Pasta")
-# print("Testing if the price of the food item is going to be changed")
-change= test_bot.change_price()
-if change== True:
-    print("Operation completed")
-else:
-    print("Operation failed")
-print()  
-# print("Testing if no duplicate items are added in different case by checking if length of menu is going to be more than 2 because we need to add an unique item to end the loop, the condition checks if length is more than 2 and there are no duplicates found in the menu")
-print("First add burger which is going to be rejected")
-print("Second add duck to break out of the loop and to check if the test passed or not")
-test_bot.menu=[{"Burger": 50}, {"Pizza":60}]
-test_bot.name_values=["burger", "pizza"]
-print("Initial Menu: ")
-print()
-test_bot.show_menu()
-print()
-test_bot.add_item()
-count=0
-for i in test_bot.menu:
-    for counts in i:
-        if counts== "Burger":
-            count+=1
-if len(test_bot.menu)> 2 and count==1 :
-    print("Test passed")
-else:
-    print("Test failed ")
-print()
-# print("Testing if the math of the server class is working (to check how much discount is given for a total bill of $50)")
-test_bot.menu=[{"Duck": 50.00}]
-test_bot.purchase_history=["Duck"]
-total_bill= test_bot.get_total()
-discount_bill= test_bot.apply_discount()
-print("Expected: 50.00 Actual: "+ f"{total_bill:.2f}")
-print("Expected: 32.50 Actual: " + f"{discount_bill:.2f}")
-print()
-# print("Testing if the math of the server class is working (to check how much discount is given for a broad amount.)")
-test_bot.menu=[{"Duck": 50.00}, {"Pasta":80.00}]
-test_bot.purchase_history= ["Duck","Pasta"]
-total_bill= test_bot.get_total()
-discount_bill= test_bot.apply_discount()
-print("Expected: 130.00 Actual: "+ f"{total_bill:.2f}")
-print("Expected: 84.50 Actual: " + f"{discount_bill:.2f}")
-print()
-# print("Testing if right discount is provided when the total bill is going to be $49.99")
-test_bot.menu=[{"Pizza": 29.99}, {"Burger": 20.00}]
-test_bot.purchase_history=["Pizza", "Burger"]
-total_bill= test_bot.get_total()
-discount_bill= test_bot.apply_discount()
-print("Expected: 37.49 , Actual: "+ f"{discount_bill:.2f}")
-print()
-print("Testing if no items are added, there is $0 returned")
-test_bot2= Server("Robot")
-test_bot2.purchase_history=[]
-zero_amount= test_bot2.get_total()
-print("Expected: 0.00 Actual: " + f"{(zero_amount):.2f}")
-print()
-# print("Testing what happens if there is a negative amount added to the get money method")
-print("Add negative amounts of money first to  pass the test and then add $30")
-test_bot.purchase_history=["Duck", "Pasta ", "Pizza"]
-negative_amount= test_bot.get_money()
-if negative_amount== True:
-    print("Test case passed meaning negative values cannot be accepted")
-else:
-    print("Test case failed ")
-print()
-# print("Testing if order_history is being saved into a file ")
-check_file= test_bot.save_order_history()
-if check_file== True:
-    print("Test passed , information is written to the order history file ")
-else:
-    print("Test failed, due to the operation failing ")
-print()
-# print("Testing if salary is being saved to a file with the timestamp")
-print("Put in any values other than negative values as that is tested in the next test")
-work= test_bot.work_per_week()
-if work== True:
-    print("Operation completed meaning data is saved to the wages file ")
-else:
-    print("Operation failed")
-print()
-# print("Testing if work per week does not take the number of hours worked and the number of days worked more and less than the limits set")
-print("Put in negative values for the test to work")
-work1= test_bot.work_per_week()
-if work1== True:
-    print("Edge case passed with no negative values being passed  ")
-else:
-    print("Edge case failed, try again!")
-print()
-# print("Testing if fractional hours is not going to be round down to give an exact amount of wages per week to the worker")
-print(" Instructions:- Enter 5.5 hours per day and 3 days")
-test_bot.work_per_week()
-wages= pd.read_csv("Testwages.csv")
-items= wages["Total Salary per week"].tolist()
-if len(items)>0:
-    item=items[-1]
-    if float(item)== 264.00:
-        print("Test passed")
-        print("Expected: 264.00, Actual:"+ f"{item:.2f}")
-    else:
-        print("Test failed! ")
-else:
-    print("No items are in the list!")
-print()
-# print("Testing if the manager class is going to be authenticating the password")
-print("First enter the wrong password in a case insensitive manner which should be throwing up an error and say error and give you number of tries ")
-print("Second enter the right password exactly to display the message ")
-test_manager= Manager('Manvik')
-authentication= test_manager.authenticate()
-if authentication== True:
-    print("Authentication passed ")
-else:
-    print("Authentication failed, Please try again")
-print()
-# print("Testing if manager class is going to deny access when password is entered wrong three tims")
-print("Just keep entering the password wrong 3 times where all chances are complete ")
-authenticate_failed= test_manager.authenticate()
-if authenticate_failed== False:
-    print("Test is passed as the user is not allowed to further access the manager class after 3 tries  ")
-else:
-    print("Test failed!")
-print()
-# print("Testing if corrupted data is being handled properly with text written instead of numetic values ")
-corrupt_user= Server("NewGuy")
-with open("NewGuywages.csv","w")as writ:
-    writer= csv.writer(writ)
-    writer.writerow(["Timestamp", "Total Salary per week"])
-    writer.writerow(["None", "Three Hundered "])
-with open("NewGuyorder_history.csv", "w")as writers:
-    writ= csv.writer(writers)
-    writ.writerow(["Timestamp", "Items ordered", "Total Bill"])
-    writ.writerow(["Now", ["Duck", "Salad"], "Hundred"])
-corrupt= test_manager.calculate_bonus("NewGuy")
-if corrupt== False:
-    print("The test is passed with corrupt data handled properly")
-else:
-    print("Test failed!")
-print()
-# print("Testing if the file is going to be read and the total salary is computed ")
-count_value= test_manager.read_file("Test")
-if count_value != False:
-    print("Expected value: 84.5 ,  Actual value: " + str(count_value))
-else:
-    print("There is an error , please try again")
-print()
-# print("Testing if the bonus is going to be calculated  ")
-bonus= test_manager.calculate_bonus("Test")
-if bonus == True:
-    print("The bonus of the server is being saved to the bonus list  ")
-else:
-    print("There is an error! ")
-print()
-print("Testing if the bonus amount is being saved ")
-print(test_manager.bonus)
-print()
-print("Testing if all the bonus amounts are being printed ")
-print_bonus= test_manager.show_bonuses()
-print()
-if print_bonus== True:
-    print("All the bonus amounts are being printed succesfully")
-else:
-    print("There is an error! ")
-print()
-print("Testing if the right bonus is provided for $500 of sales")
-test_manager1= Manager("Manvik1")
-with open("testbonusorder_history.csv", "w") as writ:
-    writer= csv.writer(writ)
-    writer.writerow(["Timestamp", "Items ordered", "Total Bill"])
-    writer.writerow(["None", "Steak", 500])
-with open("testbonuswages.csv", "w")as m:
-    d= csv.writer(m)
-    d.writerow(["Time stamp", "Total Salary per week"])
-    d.writerow(["Now", 1600])
-bonus_wages=test_manager1.calculate_bonus("testbonus")
-if bonus_wages== True:
-    for d in range(len(test_manager1.bonus)):
-        for i in test_manager1.bonus[d]:
-            print(f"Expected: 400, Actual: {test_manager1.bonus[d][i]:.2f}")
-print()
-print("Testing if the missing file handling is handled properly")
-missing_file= test_manager.calculate_bonus("GhostUser")
-if missing_file== False:
-    print("Test passed as the missing file is handled with a FileNotFoundError")
-else:
-    print("Test failed!")
-print()
-# Checking if there is going to be a graph plotted for a single order history
-print("Testing if the pie chart is going to be displayed for 1 order ")
-test_bot.purchase_history=["Steak", "Pizza", "Pasta"]
-test_bot.save_order_history()
-show_chart= test_manager.display_chart("Test")
-if show_chart== True:
-    print("Operation complete ")
-else:
-    print("There is an error! ")
-print()
-# print("Case B - More order items are added ")
-#("Checking if various order_history are being saved ")
-#("Test case 1")
-test_bot1= Server("Test1")
-test_manager= Manager("Manager1")
-test_bot1.menu=[{"Duck":50}, {"Salad": 20}, {"Pizza":30}, {"Pasta":15}]
-test_bot1.name_values=["duck","salad","pizza", "pasta"]
-print("Initial menu: ")
-print()
-test_bot1.show_menu()
-test_bot1.menu.append({"Duck":20})
-test_bot1.name_values.append("duck")
-print("Updated menu: ")
-print()
-test_bot1.show_menu()
-print()
-# print("Checking if various order_history are being saved ")
-test_bot1.purchase_history=["Duck", "Pasta", "Pizza", "Pasta"]
-check_files= test_bot1.save_order_history()
-if check_files== True:
-    print("Test passed , information is written to the file ")
-else:
-    print("Test failed, due to the operation failing ")
-print()
-# print("Test case 2")
-test_bot1.purchase_history=["Pizza", "Cheeseburger", "Pasta"]
-check_files= test_bot1.save_order_history()
-if check_files== True:
-    print("Test passed , information is written to the file ")
-else:
-    print("Test failed, due to the operation failing ")
-print()
-# print("Checking if there is an updated pie chart seen with multiple food items stored in the order history file")
-show_chart= test_manager.display_chart("Test1")
-if show_chart== True:
-    print("Operation complete ")
-else:
-    print("There is an error! ")
-print()
-# print("Checking if empty items ordered does not print a pie but gracefully handles the error")
-with open(os.path.join(os.getcwd(), "Test2order_history.csv"), "w") as writ:
-    writer= csv.writer(writ)
-    writer.writerow(["Timestamp", "Items ordered", "Total Bill"])
-    writer.writerow(["None", "Nothing", "0.00"])
-plot_empty_chart= test_manager.display_chart("Test2")
-if plot_empty_chart== None:
-    print("Test passed as no chart is plotted due to empty data!")
-else:
-    print("Test failed!")
+        print("No option is selected, please select a right option ")     
 
 
 
