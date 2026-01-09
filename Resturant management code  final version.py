@@ -1,14 +1,11 @@
 from datetime import datetime # the datetime module is going to be imported to get the timestamp of when the order is placed and the work hours are logged in for the week 
-import csv # Csv is imported to write all the information into a csv file 
-import os # the purpose of this module is so that files can b read and written in all operating systems where there are different paths 
-import pandas as pd# Purpose of this module is to filter and read the specific  data in the files and also  handling broken lines 
 from matplotlib import pyplot as plot # The purpose of this module is to plot the pie chart
 import getpass 
 import sqlite3
+
 def menu_setup():
-    key= sqlite3.connect('resturant_menu.db')
+    key= sqlite3.connect('resturant.db')
     cursor= key.cursor()
-        
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS menu_inventory(
             name TEXT PRIMARY KEY,
@@ -26,14 +23,14 @@ def menu_setup():
     cursor.execute("INSERT OR IGNORE INTO menu_inventory VALUES ('Steak', 75.00, 'Main', 0)")
     key.commit()
     key.close()
-    
+ 
 class Server: # This is the server class which is going to be accessed by the server who is placing the orders , adding items etc, there are various attributes initialized like the name values,menu etc 
     def __init__(self,name):
         # We are initializng a constructor with the server needing to put their name so that the order history can be saved at different files which changes according to the name of the server. We are also initialzing an attribute called self.menu which is storing a dictionary with name of food item being the key and the price being the value in each dictionary. There is also an empty list initiated called self.order_history to store the name of food items ordered by each consumer. 
         menu_setup() 
         self.name= name
         print("Welcome "+ name )
-        conn=sqlite3.connect("resturant_menu.db")
+        conn=sqlite3.connect("resturant.db")
         cursor= conn.cursor()
         cursor.execute("SELECT name, price FROM menu_inventory")
         self.menu= [{row[0]:row[1]} for row in cursor.fetchall()]
@@ -67,6 +64,13 @@ class Server: # This is the server class which is going to be accessed by the se
                             new_item[name.title()]=round(price,2) # There is a dictionary being created where the food item is going to be the key and the price at 2 decima places is going to be the value 
                             self.menu.append(new_item)# The menu is going to be updated by appending the new dictionary at the end.
                             self.name_values.append(name.lower())# This list is also going to be updated so that whenever this function is going to be called again , the list should reflect that this food item is  entered to the menu in lowercase and cannot be re-entered again
+                            conn = sqlite3.connect('resturant.db')
+                            cursor= conn.cursor()
+                            
+                            cursor.execute('''
+                                INSERT INTO menu_inventory(name,price,category,times_ordered)
+                                VALUES (?,?,?,?)
+                            ''', (name.title(), price, 'General',0))
                             break
                         else: #This statement is going to be ensuring that if the food item is already in the name of food items list, then the message saying that the item is already in the menu is displayed.
                             print("Item already exists in the menu for today, Please add another item")
@@ -88,6 +92,13 @@ class Server: # This is the server class which is going to be accessed by the se
                             if i.lower()== name.lower(): # The names are being compared and checked in lower case to ensure that the program does not crash and no new duplicates in lower case are added to the menu 
                                 if self.menu[num][i] != price and price >0 : # This condition is going to be checking if price is more than 0
                                     self.menu[num][i]= price 
+                                    conn = sqlite3.connect('resturant.db')
+                                    cursor= conn.cursor
+                                    cursor.execute('''
+                                        UPDATE menu_inventory
+                                        SET price= ?
+                                        WHERE name= ?
+                                    ''', (price, name.title()))
                                     print("Price changed for "+ i)
                                     break # This statement is going to be breaking the inner loop if the task is done succesfully 
                                 else: # This condition is going to hold true if the price of the food item is going to be the same as it is in the menu with a message displayed for the user to put in new values and the menu is shown for reference 
@@ -112,7 +123,7 @@ class Server: # This is the server class which is going to be accessed by the se
                 purchase= input("What does your customer want to eat? ") # There is an input asked to add the food item that the customer wants to eat 
                 if purchase.lower() in self.name_values:# The code is again going to be checking the updated food items name list to verify if the food item in lowercase  asked by the customer actually is in the menu.
                     self.purchase_history.append(purchase) # If the item does exist in the menu then the food item is going to be added to the list.
-                    conn = sqlite3.connect('resturant_menu.db')
+                    conn = sqlite3.connect('resturant.db')
                     cursor = conn.cursor() 
                     cursor.execute("UPDATE menu_inventory SET quantity_ordered=  quantity_ordered+1 WHERE name =?", (purchase,))
                     conn.commit()
@@ -176,33 +187,29 @@ class Server: # This is the server class which is going to be accessed by the se
         # The value printed here is the value if there is no  amount of money saved.
         
     def save_order_history(self): # The purpose of this method is to be saving the order history into a csv file according to the server's name.
-        write_lst=[] # This is the list where in there are other lists appended and then this list is written into a csv file.This list is going to be overwritten to prevent any past data from being written again into the csv file
-        header_lst= ["Time when order was placed", "Items ordered", "Total Bill"] # This is the list where in each rows name is being written and stored in the variable.
-        data_lst=[] # This is an empty list where all the other values are stored in it such as the time stamp, total bill and purchase history. This list is going to be overwritten to prevent any past data from being written again into the csv file
-        discounted_bill= self.apply_discount() # The discount function is going to be called to get the discounted final bill
-        file_path= os.getcwd() # We are finding the location of this .py file so that we can store the order history files in the same folder for easy accessibility
-        file_name= os.path.join(file_path, self.name+ "order_history.csv") # We are constructing a file path that can be working with any operating systems to ensure that this function can work with any operating systems.
-        file_exist= os.path.isfile(file_name)# We are checking if the file already exists or not
+        discounted_bill= self.apply_discount() # type: ignore
         full_datetime= str(datetime.now()) # We are calling the datetime module to obtain the current time in days and time  when the order is being put in place and then casted as a string 
-        date_time_part= full_datetime.split('.')[0] # Our whole current datetime which has now been casted as a string, we are spliting the string using (.) to only get the date and the time 
-        data_lst.append(date_time_part)# In the data list, the new date time string is being added 
-        if len(self.purchase_history)>0: #It is checked if there has beeen an ordered placed and then the food items in the purchase history is being joined together using a comma and then adding it to the data list
-            data_lst.append(", ".join(self.purchase_history))
-        else:# If there are no food items ordered then we are adding "Nothing" to signify that no food items were ordered so the total bill is 0
-            data_lst.append("Nothing")
-        data_lst.append(str(f"{discounted_bill:.2f}"))# In the data list the discounted bill at 2 decimal places is being added as a string 
-        write_lst.append(data_lst)# The data list is then going to be added to the write list with the write list being written to the csv file
+        date_time_part= full_datetime.split('.')[0] # Our whole current datetime which has now been casted as a string, we are spliting the string using (.) to only get the date and the time  data_lst.append(date_time_part)# In the data list, the new date time string is being added 
         try:
-            with open(file_name, "a", newline='') as csvfile: # The with statement is used to ensure that if there was to be any error in between data being read to the file then the file is not curropted and the file closes automatically. The append more is called so that additional data can be added without overwritting the existing data 
-                writer= csv.writer(csvfile) # The csv writer is going to be called to write the write list into the file
-                if file_exist== False: # This conditon checks if the file already exists or not and if this condtion is true then the header rows are first going to be written however otherwise the header rows wont be written
-                    writer.writerow(header_lst)
-                writer.writerows(write_lst)# The rest of the data is then being written to the file per row at a time regardless of wether the condition above is true or not.
-                return(True)
-        except IOError: # This condition is called when there is going to be an error to write the information to the file so it does not crash the program 
-            print("Error writing to the file, Please Try Again")
+            clean = ', '.join(self.purchase_history)
+            conn = sqlite3.connect("resturant.db")
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS all_orders (
+                    order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    server_name TEXT,
+                    items_ordered TEXT,
+                    total_bill REAL,
+                    timestamp TEXT
+                )
+            ''')
+            cursor.execute('INSERT INTO all_orders (server_name, items_ordered, total_bill, timestamp) VALUES (?,?,?,?)', (self.name, clean, discounted_bill, date_time_part))
+            conn.commit()
+            conn.close()
+        except sqlite3.Error:
+            print("There is an SQL Error, Please Try Again! ")
             return(False)
-        except: # This condition is called to deal with any other unknown errors other than Input / Output Error and prevent the program from crashing x
+        except:  # This condition is called to deal with any other unknown errors other than Input / Output Error and prevent the program from crashing x
             print("There seems to be another error ,Please Try Again")
             return(False)
 
@@ -216,7 +223,7 @@ class Server: # This is the server class which is going to be accessed by the se
                         money_remaining= balance-money_gotten
                         balance= money_remaining # Now the variable that is storing the total discounted bill is going to store how much money remaining is there to pay
                         print(f"You need to give ${balance:.2f} more.") # This message is being printed to inform the customer as to how much money do they need to give more to pay for their bill
-                    elif money_gotten> balance:  # This condition is going to be called when the customer is paying more than the total bill with some change being return by subtracting the money gotten with the total discounted bill and then terminating the loop as the change is being returned and the customer owes the resturant no more money
+                    elif money_gotten> balance:  # This condition is going to be called when the customer is paying more than the total bill with some change being return by subtracting the money gotten with the total bill and then terminating the loop as the change is being returned and the customer owes the resturant no more money
                         return_change= money_gotten- balance
                         print("Your change is $"+ f"{return_change:.2f}")
                         self.purchase_history=[]  # The purchase history is going to be updated with the list being empty so that a new order can be taken
@@ -237,39 +244,32 @@ class Server: # This is the server class which is going to be accessed by the se
     def work_per_week(self): # The purpose of this method is for the server to add how many days  and hours of the week they are working 
         while True: # This statement is there to ensure that each sever is adding the right inputs in by constantly prompting them until they add the right inputs
             try: # There is error handling done here to ensure that the program wont crash if there is an error  
-                data_lst=[] # This is the list where we are going to be storing all the data into
-                write_lst=[]# This is the list which is going to be writing the data to the file
-                header_lst=["Time stamp", "Total Salary per week"] # This is the list which contains the headers for each row like the time stamp and total salary per week
                 hours_work= float(input("How many hours have you worked per day: ")) # This is going to be getting the input of how many has the servers logged per day
                 days_per_week= float(input("How any days have you worked per week: "))# This is going to be getting the input regarding how many days are worked in the week
                 full_datetime= str(datetime.now())
                 date_time_part= full_datetime.split('.')[0]
-                data_lst.append(date_time_part)
-                
                 if (days_per_week<= 7 and days_per_week>0):# This is going to be checking if the days of the week entered is 7 or less which are the number of days in a week 
                     if hours_work>0 and hours_work<=12:# This condition checks if the hours worked per day is more than 0 and less than equal to 12 hours per day
                         salary=  days_per_week* hours_work*16.00 #This variable is calculating the salary by taking all the wage per week and multiplying with 16 which is the hourly rate
-                        data_lst.append(str(salary)) 
-                        write_lst.append(data_lst)
-                        file_path= os.getcwd() 
-                        file_name= os.path.join(file_path, self.name+ "wages.csv")
-                        file_exist= os.path.isfile(file_name)
-                        try: # This is going to be appending new data to the weekly wages file and is going to be checking if the header rows exist is the file or not and according to that will be adding it to the file or not 
-                            with open(file_name, "a", newline='')as file:
-                                write=csv.writer(file)
-                                if file_exist== False:
-                                    write.writerow(header_lst)
-                                write.writerows(write_lst)
-                                return(True)
-                            break
-                        except IOError: # This condition is called when there is going to be an error to write the information to the file so it does not crash the program 
-                            print("Error writing to the file, Please Try Again")
-                        except: # This condition is called to deal with any other unknown errors other than Input / Output Error and prevent the program from crashing x
-                            print("There seems to be another error ,Please Try Again")
+                        conn= sqlite3.connect("resturant.db")
+                        cursor= conn.cursor()
+                        cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS wages_per_week (
+                            order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            server_name TEXT,  <-- This is the key column!
+                            salary_per_weeek TEXT,
+                            timestamp TEXT
+                            )
+                        ''')
+                        cursor.execute('INSERT INTO wages_per_week VALUES (?,?,?)', (self.name,salary, date_time_part ))
+                        conn.commit()
+                        conn.close()
                     else:
                         print("Please enter the right number of hours worked per day between 1 and 12 .")
                 else:# This condition is going to be called if the number of days entered are greater than 7, which is not posible in a week
                     print("Please enter right number of days worked per week.")
+            except sqlite3.Error:
+                print("There is a SQL related problem, Please Try Again !")
             except ValueError: # This will be handling value errors if the value of hours worked or days worked is not going to be converted to a float
                 print("Please enter the right inputs for both questions ")
             except: # All other general exceptions is going to be handled.
@@ -298,19 +298,18 @@ class Manager: #This is another class called which is going to be accessed by th
     def read_file(self, name ): # The purpose of this method is to be reading the order history file of each server according to their name and then calculate the total bill overall in the file
         count=0
         try:
-            file_path= os.getcwd()
-            file_name= os.path.join(file_path, name+ "order_history.csv")
-            data= pd.read_csv(file_name, encoding="latin1", on_bad_lines='skip') # The purpose of this line is to access a file at a particular econding and also it skips bad lines which are not going to be a number so that the total value of count is calculated 
-            try:
-                bill= data["Total Bill"].tolist() # All the values stored at total bill column  is going to be stored in this list
-                for i in bill: # We are going to be iterating through the variable to incriment all the values within bill as a float to get the total count and then that value is going to be returned
-                    count+= float(i)
-                return(count)
-            except KeyError: # This condition is going to be handling the error of "Total Bill " not found in the error so the program does not crash and instead displays a message 
-                print("Key cannot be found!")
-        except FileNotFoundError: # The purpose of this is going to be handling an error of the file not being found gracefully by printing an error mesage 
-            print("File cannot be found, Please try again!")
-            return(False)
+            conn=sqlite3.connect("resturant.db")
+            cursor= conn.cursor()
+            cursor.execute("SELECT SUM(total_bill) FROM all_orders WHERE server_name = ?", (name, ))
+            result= cursor.fetchone()
+            conn.close()
+            
+            if result and result[0] is not None:
+                total_sale= round (result[0],2)
+                return(total_sale)
+            else:
+                return(0.0)
+            
         except: # All other common errors is going to be handled here other than FilenotFoundError 
             print("There seems to be an unknown error, Please try again!")
             return(False)
@@ -319,16 +318,15 @@ class Manager: #This is another class called which is going to be accessed by th
         total_wages=0 
         bonus_key= {} # This is going to be initializing an empy dictionary which will be storing the name of the server as they key and the bonus as a value 
         bonus_amount=0
-        file_path= os.getcwd()
-        file_name= os.path.join(file_path, name+ "wages.csv")
-        try: 
-            data= pd.read_csv(file_name, encoding="latin1", on_bad_lines='skip') # The file is going to be encoded to be preventing an Unicode Error which was happening in my operating system and skip bad_lines ignores all the broken files to prevent an error being thrown up 
-            try:
-                salary_amount= data["Total Salary per week"].tolist() # The amounts in the Total Salalry column is going to be stored in this list 
-                for s in salary_amount:
-                    total_wages+= float(s)
-                total_amount= self.read_file(name) #The read file function which is going to be returning the total amount of sales done by a particular server and is then going to be saving it 
-                if total_amount != False: # If the total amount returned is not going to be False and then according to the total number of sales done, and bonus is calculated according to the percentage of wages earned 
+        conn=sqlite3.connect("resturant.db")
+        cursor= conn.cursor()
+        cursor.execute("SELECT SUM(salary_per_week) FROM all_orders WHERE wages_per_week = ?", (name, ))
+        result= cursor.fetchone()
+        conn.close()
+        try:
+            total_wages=round(result[0],2)
+            total_amount= self.read_file(name) #The read file function which is going to be returning the total amount of sales done by a particular server and is then going to be saving it 
+            if total_amount != False: # If the total amount returned is not going to be False and then according to the total number of sales done, and bonus is calculated according to the percentage of wages earned 
                     if total_amount>=200 and total_amount< 300:
                         bonus_amount= total_wages* 0.10
                     elif total_amount >=300 and total_amount< 500:
@@ -340,13 +338,13 @@ class Manager: #This is another class called which is going to be accessed by th
                     bonus_key[name]= bonus_amount # The dictionary is going to be updated with the name being the key and the value being the calculated bonus amount 
                     self.bonus.append(bonus_key) # The dictionary is going to be appen ding to the bonus list which is initialized in the attributes 
                     return(True)
-                else: # This condition will be holding true if the total_amount is going to be returning False  displaying the message that bonuses cannot be calculated 
+            else: # This condition will be holding true if the total_amount is going to be returning False  displaying the message that bonuses cannot be calculated 
                     print("The bonus amount cannot be calculated!") 
                     return(False)
-            except KeyError: # This statement is going to be handling a key error where the header "Total Salary per week" cannot be found in the file
-                print("Key cannot be found!")
-        except FileNotFoundError: # The purpose of this is going to be handling an error of the file not being found gracefully by printing an error mesage 
-            print("This file does not exist, Please Try Again")
+        except KeyError: # This statement is going to be handling a key error where the header "Total Salary per week" cannot be found in the file
+            print("Key cannot be found!")
+        except sqlite3.Error: 
+            print("This database does not exist, Please Try Again")
             return(False)
         except: # All other common errors is going to be handled here other than FilenotFoundError 
             print("There seems to be another error, Please Try Again")
@@ -368,64 +366,90 @@ class Manager: #This is another class called which is going to be accessed by th
             master_lst=[] # This is the clean list which is going to be consisting of all the food items ordered in the file 
             name_lst=[] # The purpose of this list is going to be to storing the name of the food items 
             values_lst=[]# The count of each food item is going to be saved in this list 
-            count=0 # This is the variable that is going to be counting how many times is each food item is ordered
-            file_path= os.getcwd()
-            file_name= os.path.join(file_path, name+ "order_history.csv")
-            data= pd.read_csv(file_name, encoding="latin1", on_bad_lines='skip') # The purpose of this line is to access a file at a particular econding and also it skips bad lines which are not going to be a number so that the total value of count is calculated 
-            try:
-                items= data["Items ordered"].tolist() # All the values stored at the items ordered  column  is going to be stored in this list
-                for item in items: # The items list is going to be iterated and then it will be split to become indivitual values 
-                    split_item= item.split(",") 
-                    for x in split_item:# The split items is going to be iterated over to a master list which is going to be clean and compared over to get the unique values of food item names 
-                        clean_x= x.strip().title()
-                        if clean_x!= "Nothing":
-                            master_lst.append(clean_x)
-                        else:
-                            pass
-                for i in master_lst: # Iterating over the clean to compare and add it to the values list 
-                    if i not in name_lst: # Each indivitual value in the split item is being compared to the name list so that there is going to be duplicate values added to the name list and if the food item is not in the name list, then item name is added to the list
-                        name_lst.append(i)
-                    else:
-                        pass
-                for i in name_lst: # The name list is going to be iterated over to check how many items has the item being ordered 
-                    count=0 # The variable is going to be resetted back to 0 so that each food item can be indivitually counted 
-                    for x in master_lst: # The split list is going to be iterated over to compare between the values in both lists 
-                        if i== x:
-                            count+=1 # If the condition will be holding true then the value of count is incrimented by 1
-                    values_lst.append(count)# The value of count for each food item is being added to the values list
-                if len(values_lst)>0:
+            count=0
+            conn=sqlite3.connect("resturant.db")
+            cursor= conn.cursor()
+            cursor.execute("SELECT items_ordered FROM all_orders WHERE server_name= ?", (name,))
+            result= cursor.fetchall()
+            conn.commit()
+            conn.close()
+            if not result:
+                print("No data is found ")
+                return(None)
+            
+            for i in result:
+                order= i[0]
+                items= order.split(", ")
+                for item in items:
+                    clean= item.strip().title()
+                    master_lst.append(clean)
+            
+            set_name= {i for i in master_lst}
+            name_lst= list(set_name)
+            
+            for x in name_lst:
+                count=0
+                for d in master_lst:
+                    if d==x:
+                        count+=1
+                values_lst.append(count)
+            
+            
+            if len(values_lst)>0:
                     fig= plot.figure(figsize=(10,10))# The command is going to be creating a new figure and its size is being set up for a 10*10 dimension 
                     plot.pie(values_lst, labels= name_lst) # This command is going to plot a pie chart using the values with each value having a label according to the name of food item
                     plot.title("Order history for " + name) # This command is going to be giving a title for the pie chart which has the name of the server 
                     plot.show() #This command is going to be displaying the pie chart to the manager 
                     print("Pie chart has been plotted! ")
                     return(True)
-                else:
+            else:
                     print("It is not possible as there is no data ")
                     return(None)
-            except KeyError: # This statement is going to handle any key error if "Items ordered " header cannot be found in the order history file displaying an error message
+        except sqlite3.Error: # The purpose of this is going to be handling an error of the file not being found gracefully by printing an error mesage 
+            print("")
+            return(False)
+        except KeyError: # This statement is going to handle any key error if "Items ordered " header cannot be found in the order history file displaying an error message
                 print("Key cannot be found!")
                 return(False)
-        except FileNotFoundError: # The purpose of this is going to be handling an error of the file not being found gracefully by printing an error mesage 
-            print("File cannot be found, Please try again!")
-            return(False)
         except:  #All other common errors is going to be handled here other than FilenotFoundError 
             print("There seems to be an unknown error, Please try again!")
             return(False)
     # The debugger was also used in this function to identify what is happening with split_items and what was happning with count each time in order to ensure that the right quantitiy of the pie chart was plotted for each value 
+    
     def show_bestselling_items(self):
-        conn= sqlite3.connect("resturant_menu.db")
-        cursor= conn.cursor()
-        cursor.execute("SELECT name, quantity_ordered FROM menu_inventory ORDER BY quantity_ordered DESC")
-        data_items= cursor.fetchall()
-        for i in data_items:
-            print( i[0] + " - Sold: "+  str(i[1]))
-        conn.close()
+        try:
+            conn= sqlite3.connect("resturant.db")
+            cursor= conn.cursor()
+            cursor.execute("SELECT name, quantity_ordered FROM menu_inventory ORDER BY quantity_ordered DESC")
+            data_items= cursor.fetchall()
+            for i in data_items:
+                print( i[0] + " - Sold: "+  str(i[1]))
+            conn.close() 
+        except sqlite3.Error:
+            print('There is a SQL error, Please Try Again!')
+        except:
+            print('There is an unknown error, Please Try Again!')
+    
+    def show_most_productive_employee(self):
+        try:
+            conn= sqlite3.connect("resturant.db")
+            cursor= conn.cursor()
+            cursor.execute("SELECT server_name, salary_per_weeek FROM wages_per_week ORDER BY CAST (salary_per_weeek AS REAL) DESC")
+            salary_items= cursor.fetchall()
+            print("Highest Earners")
+            for i in salary_items:
+                print(i[0] + " - Amount: $" + str(i[1]))
+            conn.close()
+        except sqlite3.Error:
+            print('There is a SQL error, Please Try Again!')
+        except:
+            print('There is an unknown error, Please Try Again!')
         
 print("Welcome to the Resturant Management System")
 while True:
     print("Please select an option from below")
     option= input("Access the program (A), Quit the program (Q): ")
+    
     if option == "A" or option =="a": 
         type_person= input("Please enter if you are a server(S) or a manager(M): ") # The variable is asking if the person logging in the system is a server or a manager
         if type_person== "S" or  type_person== "s": # If the person is going to be in putting S for server, then a new object is going to forming with the server class 
@@ -467,7 +491,7 @@ while True:
             authentication= s.authenticate() # After a new manager object is created, the person who is going to be the manager has to authenticate their details 
             if authentication== True: # If the authentication is going to be passed the manager will have some options to choose from 
                 while True:# The loop is going to be running infinitely until the manager wants to exit the program when they are done. 
-                    print("Options:-\n Calculate bonus for each person: B \n Show all the bonuses that are to be given this month : S \n Display the items ordered by each server in a pie chart :P \n Which item is sold the most :W \n Exit the program :E ")
+                    print("Options:-\n Calculate bonus for each person: B \n Show all the bonuses that are to be given this month : S \n Display the items ordered by each server in a pie chart :P \n Which item is sold the most :W \n Most productive employee :M \n Exit the program :E ")
                     options_manager= input("Please enter the letter of the option you want: ") # According to the options given to the manager, they can choose anyone 
                     if options_manager== "B" or options_manager== "b": # If the option chosen by the manager is to calculate the bonus for a server, the calculate_bonus method in the manager function is called 
                         name= input("Please enter the name of the person whose bonus you want to calculate:  ")
@@ -480,6 +504,8 @@ while True:
                         s.display_chart(name1)
                     elif options_manager== "W" or options_manager=="w":
                         s.show_bestselling_items()
+                    elif options_manager== "M" or options_manager=="m":
+                        s.show_most_productive_employee()
                     elif options_manager =="E" or options_manager =="e":
                         print("Exiting!")
                         break
@@ -491,9 +517,7 @@ while True:
         print("Quitting the program ")
         break
     else: # This condition is going to be holding True if eiter A or Q is not selected asking the user to prompt again 
-        print("No option is selected, please select a right option ")     
-
-
+        print("No option is selected, please select a right option ")
 
 
 
