@@ -25,16 +25,21 @@ def menu_setup():
     key.close()
  
 class Server: # This is the server class which is going to be accessed by the server who is placing the orders , adding items etc, there are various attributes initialized like the name values,menu etc 
+    menu_cache= None
     def __init__(self,name):
         # We are initializng a constructor with the server needing to put their name so that the order history can be saved at different files which changes according to the name of the server. We are also initialzing an attribute called self.menu which is storing a dictionary with name of food item being the key and the price being the value in each dictionary. There is also an empty list initiated called self.order_history to store the name of food items ordered by each consumer. 
         menu_setup() 
         self.name= name
         print("Welcome "+ name )
-        conn=sqlite3.connect("resturant.db")
-        cursor= conn.cursor()
-        cursor.execute("SELECT name, price FROM menu_inventory")
-        self.menu= [{row[0]:row[1]} for row in cursor.fetchall()]
-        conn.close()
+        if Server.menu_cache is None:
+            
+            conn=sqlite3.connect("resturant.db")
+            cursor= conn.cursor()
+            cursor.execute("SELECT name, price FROM menu_inventory")
+            self.menu= [{row[0]:row[1]} for row in cursor.fetchall()]
+            conn.close()
+        else:
+            self.menu= Server.menu_cache
         self.name_values=[]  # There is this list initiated in order to ensure that the add_item method works so we can easily add new items by comparing food items in lower case and check this list. 
         self.purchase_history=[] # This list is responsible to save the food items that are being purchased when ordered by one table 
         for item in self.menu: # The menu is being iteratred over to save it in the name values list in lowercase to compare when purchasing and adding new items to the menu
@@ -50,6 +55,8 @@ class Server: # This is the server class which is going to be accessed by the se
                 print() #This is used so that there is going to be a gap between two items in the menu 
         # There is a nested loop used here as we are first going over the list to acess all the dictonaries and then we loop through each dictionary to print each food item and then its price by casting the price as a string otherwise we cant concentate the value of price to a string.
     
+    def refresh_cache(self):
+        Server.menu_cache= None
     def add_item(self): # The purpose of the method is to be adding new items to the menu as there is a stock menu initialized and the server is going to be adding new items to the menu for the current day. 
         new_item={}
         while True:
@@ -68,9 +75,12 @@ class Server: # This is the server class which is going to be accessed by the se
                             cursor= conn.cursor()
                             
                             cursor.execute('''
-                                INSERT INTO menu_inventory(name,price,category,times_ordered)
+                                INSERT INTO menu_inventory(name,price,category,quantity_ordered)
                                 VALUES (?,?,?,?)
                             ''', (name.title(), price, 'General',0))
+                            self.refresh_cache()
+                            conn.commit()
+                            conn.close()
                             break
                         else: #This statement is going to be ensuring that if the food item is already in the name of food items list, then the message saying that the item is already in the menu is displayed.
                             print("Item already exists in the menu for today, Please add another item")
@@ -78,8 +88,8 @@ class Server: # This is the server class which is going to be accessed by the se
                         print("Enter a price greater than 0 ")
             except ValueError: # This except statement is more specific to the current method which is that there is a wrong input put in for price, which will be resulting in a ValueError that is going to be gracefully handeled with this statement.
                 print("You have not added the right input for price, Please try again ")
-            except: # This except statement is going to be handling all other general errors other than ValueError in order to handle any unknown error which handles other errors gracefully and does not crash the program. 
-                print("An unknown error has occured, Please try again!")
+            #except: # This except statement is going to be handling all other general errors other than ValueError in order to handle any unknown error which handles other errors gracefully and does not crash the program. 
+                #print("An unknown error has occured, Please try again!")
     
     def change_price(self): # The purpose of this method is to enablw the server to change the price of the food items in the menu
         while True: # This allows for the method to run continously until the right input of name and price is entered 
@@ -93,13 +103,16 @@ class Server: # This is the server class which is going to be accessed by the se
                                 if self.menu[num][i] != price and price >0 : # This condition is going to be checking if price is more than 0
                                     self.menu[num][i]= price 
                                     conn = sqlite3.connect('resturant.db')
-                                    cursor= conn.cursor
+                                    cursor= conn.cursor()
                                     cursor.execute('''
                                         UPDATE menu_inventory
                                         SET price= ?
                                         WHERE name= ?
                                     ''', (price, name.title()))
                                     print("Price changed for "+ i)
+                                    self.refresh_cache()
+                                    conn.commit()
+                                    conn.close()
                                     break # This statement is going to be breaking the inner loop if the task is done succesfully 
                                 else: # This condition is going to hold true if the price of the food item is going to be the same as it is in the menu with a message displayed for the user to put in new values and the menu is shown for reference 
                                     print("This is the exisiting or invalid  price for the item, Please enter a new price! ")
@@ -244,26 +257,39 @@ class Server: # This is the server class which is going to be accessed by the se
     def work_per_week(self): # The purpose of this method is for the server to add how many days  and hours of the week they are working 
         while True: # This statement is there to ensure that each sever is adding the right inputs in by constantly prompting them until they add the right inputs
             try: # There is error handling done here to ensure that the program wont crash if there is an error  
+                conn= sqlite3.connect("resturant.db")
+                cursor= conn.cursor()
+                cursor. execute('''
+                            CREATE TABLE IF NOT EXISTS wages_per_week (
+                            server_name TEXT, 
+                            salary_per_weeek TEXT,
+                            timestamp TEXT)
+                            ''')
+                conn.commit()
+                conn.close()
                 hours_work= float(input("How many hours have you worked per day: ")) # This is going to be getting the input of how many has the servers logged per day
                 days_per_week= float(input("How any days have you worked per week: "))# This is going to be getting the input regarding how many days are worked in the week
                 full_datetime= str(datetime.now())
                 date_time_part= full_datetime.split('.')[0]
                 if (days_per_week<= 7 and days_per_week>0):# This is going to be checking if the days of the week entered is 7 or less which are the number of days in a week 
                     if hours_work>0 and hours_work<=12:# This condition checks if the hours worked per day is more than 0 and less than equal to 12 hours per day
-                        salary=  days_per_week* hours_work*16.00 #This variable is calculating the salary by taking all the wage per week and multiplying with 16 which is the hourly rate
+                        salary=  days_per_week* hours_work*16.00
                         conn= sqlite3.connect("resturant.db")
                         cursor= conn.cursor()
                         cursor.execute('''
-                            CREATE TABLE IF NOT EXISTS wages_per_week (
-                            order_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            server_name TEXT,  <-- This is the key column!
-                            salary_per_weeek TEXT,
-                            timestamp TEXT
-                            )
-                        ''')
-                        cursor.execute('INSERT INTO wages_per_week VALUES (?,?,?)', (self.name,salary, date_time_part ))
-                        conn.commit()
-                        conn.close()
+                            SELECT count(*) FROM wages_per_week
+                            WHERE server_name= ?
+                            AND strftime('%Y-%W', timestamp)= strftime('%Y-%W', 'now')
+                            ''', (self.name.title(),))
+                        record= cursor.fetchone()[0]
+                        if record>0:
+                            print("Error, You have already logged the hours for this week ")
+                            conn.close()
+                            break
+                        else:
+                            cursor.execute('INSERT INTO wages_per_week VALUES (?,?,?)', (self.name.title(),salary, date_time_part ))
+                            conn.commit()
+                            conn.close()
                     else:
                         print("Please enter the right number of hours worked per day between 1 and 12 .")
                 else:# This condition is going to be called if the number of days entered are greater than 7, which is not posible in a week
@@ -277,6 +303,7 @@ class Server: # This is the server class which is going to be accessed by the se
 
 
 class Manager: #This is another class called which is going to be accessed by the manager of the resturant only
+    manager_cache= None
     def __init__(self, name): # This is going to be initializing the new attributes when this object will be created 
         self.name= name
         self.bonus= [] # This is a list created to store the bonuses of all the servers with the key being the server name and value is the bonus amount 
@@ -446,6 +473,8 @@ class Manager: #This is another class called which is going to be accessed by th
             print('There is an unknown error, Please Try Again!')
         
 print("Welcome to the Resturant Management System")
+active_server={}
+active_manager={}
 while True:
     print("Please select an option from below")
     option= input("Access the program (A), Quit the program (Q): ")
@@ -453,8 +482,13 @@ while True:
     if option == "A" or option =="a": 
         type_person= input("Please enter if you are a server(S) or a manager(M): ") # The variable is asking if the person logging in the system is a server or a manager
         if type_person== "S" or  type_person== "s": # If the person is going to be in putting S for server, then a new object is going to forming with the server class 
-            name_Server= input("Enter your name: ")               
-            m= Server(name_Server.title())
+            name_Server= input("Enter your name: ") 
+            name_key= name_Server.title()
+            if name_key in active_server:
+                m= Server(name_key)
+            else:
+                 m= Server(name_key)
+                 active_server[name_key]=m
             print()
             while True: # The loop is going to be running infinitely until the server wants to exit the program when they are done. 
                 print("Options \n Add items to the menu : A \n Change the price for an item in the menu : C \n  Show menu: S \n  Take an order and show the bill: T  \n Log hours in : L \n  Exit the program :E " ) # The server has options of adding items to the menu, showing the menu, displaying the bill, log in hours and quit the program 
